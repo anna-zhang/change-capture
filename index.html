@@ -1,15 +1,114 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.11.8/lib/p5.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.11.8/lib/addons/p5.sound.min.js"></script>
-    <link rel="stylesheet" type="text/css" href="style.css">
-    <title>Change Capture</title>
-    <meta charset="utf-8" />
-  </head>
-  <body>
-    <main>
-    </main>
-    <script src="sketch.js"></script>
-  </body>
+   <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Motion Mirror</title>
+      <!-- DM Sans Font -->
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet" />
+      <!-- Styles -->
+      <link rel="stylesheet" href="style.css" />
+      <!-- p5.js -->
+      <script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/addons/p5.dom.min.js"></script>
+   </head>
+   <body>
+      <!-- Top left: Logo -->
+      <div class="ui-top-left">Motion Mirror</div>
+      <!-- Top right: About link -->
+      <div class="ui-top-right">
+         <a href="#" id="aboutLink" aria-haspopup="dialog" aria-controls="aboutModal">About</a>
+      </div>
+      <!-- Bottom center: Buttons -->
+      <div class="ui-bottom" role="group" aria-label="Controls">
+         <button id="toggleBtn">Start Recording</button>
+         <button id="saveBtn" style="display:none;">Download Recording</button>
+         <button id="restartBtn" style="display:none;">Restart</button>
+      </div>
+      <!-- Modal -->
+      <div id="aboutModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" tabindex="-1">
+         <div class="modal-content">
+            <h2 id="modalTitle">About Motion Mirror</h2>
+            <p>
+               This interactive artwork captures motion, not stillness. It reacts to change, drawing trails only where the camera detects movement.
+               Each stroke is a fleeting trace, a portrait of transformation in real time.
+            </p>
+            <button id="closeModalBtn">Close</button>
+         </div>
+      </div>
+      <!-- Sketch logic -->
+      <script src="sketch.js"></script>
+      <!-- UI behavior and accessibility -->
+      <script>
+         window.addEventListener('DOMContentLoaded', () => {
+           const modal = document.getElementById('aboutModal');
+           const closeModalBtn = document.getElementById('closeModalBtn');
+           const aboutLink = document.getElementById('aboutLink');
+         
+           // Button event bindings
+           document.getElementById('toggleBtn')?.addEventListener('click', handleToggleRecording);
+           document.getElementById('saveBtn')?.addEventListener('click', saveVideo);
+           document.getElementById('restartBtn')?.addEventListener('click', restartSketch);
+         
+           // Open modal
+           aboutLink.addEventListener('click', e => {
+             e.preventDefault();
+             modal.style.display = 'block';
+             modal.setAttribute('aria-hidden', 'false');
+             document.body.style.overflow = 'hidden';
+             trapFocus(modal);
+           });
+         
+           // Close modal
+           closeModalBtn.addEventListener('click', () => {
+             modal.style.display = 'none';
+             modal.setAttribute('aria-hidden', 'true');
+             releaseFocusTrap();
+             document.body.style.overflow = '';
+             aboutLink.focus();
+           });
+         
+           document.addEventListener('keydown', e => {
+             if (e.key === 'Escape' && modal.style.display === 'block') {
+               modal.style.display = 'none';
+               modal.setAttribute('aria-hidden', 'true');
+               releaseFocusTrap();
+               document.body.style.overflow = '';
+               aboutLink.focus();
+             }
+           });
+         
+           // Focus trap
+           let focusableElements, firstFocusable, lastFocusable;
+         
+           function trapFocus(container) {
+             focusableElements = container.querySelectorAll('a, button, textarea, input, select, [tabindex]:not([tabindex="-1"])');
+             if (focusableElements.length === 0) return;
+             firstFocusable = focusableElements[0];
+             lastFocusable = focusableElements[focusableElements.length - 1];
+             firstFocusable.focus();
+             document.addEventListener('keydown', handleFocusTrap);
+           }
+         
+           function releaseFocusTrap() {
+             document.removeEventListener('keydown', handleFocusTrap);
+           }
+         
+           function handleFocusTrap(e) {
+             if (e.key !== 'Tab') return;
+             if (e.shiftKey) {
+               if (document.activeElement === firstFocusable) {
+                 e.preventDefault();
+                 lastFocusable.focus();
+               }
+             } else {
+               if (document.activeElement === lastFocusable) {
+                 e.preventDefault();
+                 firstFocusable.focus();
+               }
+             }
+           }
+         });
+      </script>
+   </body>
 </html>

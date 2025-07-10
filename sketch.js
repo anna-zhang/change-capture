@@ -1,80 +1,48 @@
-let video
-let previousFrame
+let video, previousFrame
 let stepSize = 6
 let noiseScale = 0.02
-
 let gfx
+
 let mediaRecorder
 let recordedChunks = []
 let recording = false
-
-let toggleButton
-let saveButton
-let restartButton
-let playbackVideo
 let recordingStopped = false
+let ready = false
 
-let videoWidth, videoHeight
+let playbackVideo
+
+let canvas // <-- store p5 canvas globally for captureStream
 
 function setup () {
-  createCanvas(windowWidth, windowHeight)
+  canvas = createCanvas(windowWidth, windowHeight)
   pixelDensity(1)
 
-  // Create webcam capture with callback when ready
-  video = createCapture(VIDEO, () => {
-    videoWidth = video.width
-    videoHeight = video.height
-    console.log(`Video size: ${videoWidth} x ${videoHeight}`)
-
-    setupSketch()
-    setupUI()
-  })
-
-  // Request reasonable webcam size
+  video = createCapture(VIDEO)
   video.size(320, 240)
   video.hide()
 }
 
 function setupSketch () {
-  // Offscreen buffer scaled by stepSize for visual effect
-  gfx = createGraphics(videoWidth * stepSize, videoHeight * stepSize)
+  gfx = createGraphics(video.width * stepSize, video.height * stepSize)
   gfx.pixelDensity(1)
   gfx.blendMode(ADD)
   gfx.background(0)
 
-  previousFrame = createImage(videoWidth, videoHeight)
-}
-
-function setupUI () {
-  // Toggle start/stop Recording button
-  toggleButton = createButton('Start Recording')
-  toggleButton.position(20, 20)
-  toggleButton.style('position', 'absolute')
-  toggleButton.style('z-index', '10')
-  toggleButton.mousePressed(handleToggleRecording)
-
-  // Save recording button
-  saveButton = createButton('Download Recording')
-  saveButton.position(20, 60)
-  saveButton.style('position', 'absolute')
-  saveButton.style('z-index', '10')
-  saveButton.mousePressed(saveVideo)
-  saveButton.hide()
-
-  // Restart button
-  restartButton = createButton('Restart Recording')
-  restartButton.position(180, 60)
-  restartButton.style('position', 'absolute')
-  restartButton.style('z-index', '10')
-  restartButton.mousePressed(restartSketch)
-  restartButton.hide()
+  previousFrame = createImage(video.width, video.height)
 }
 
 function draw () {
-  if (!videoWidth || !videoHeight) return // Wait for webcam ready
+  if (!ready) {
+    if (video.loadedmetadata && video.width > 0 && video.height > 0) {
+      setupSketch()
+      ready = true
+    } else {
+      return
+    }
+  }
+
   if (recordingStopped) return
 
-  // Draw fading trail effect on gfx buffer
   gfx.push()
   gfx.blendMode(BLEND)
   gfx.fill(0, 15)
@@ -86,9 +54,9 @@ function draw () {
   previousFrame.loadPixels()
 
   gfx.stroke(255, 80)
-  for (let y = 0; y < videoHeight; y++) {
-    for (let x = 0; x < videoWidth; x++) {
-      let index = (x + y * videoWidth) * 4
+  for (let y = 0; y < video.height; y++) {
+    for (let x = 0; x < video.width; x++) {
+      let index = (x + y * video.width) * 4
 
       let r1 = video.pixels[index]
       let g1 = video.pixels[index + 1]
@@ -118,15 +86,14 @@ function draw () {
     video,
     0,
     0,
-    videoWidth,
-    videoHeight,
+    video.width,
+    video.height,
     0,
     0,
-    videoWidth,
-    videoHeight
+    video.width,
+    video.height
   )
 
-  // Draw gfx buffer scaled & centered on main canvas (cover scale)
   clear()
 
   let scaleX = width / gfx.width
@@ -146,21 +113,21 @@ function windowResized () {
   resizeCanvas(windowWidth, windowHeight)
 }
 
-// ----- Recording logic -----
+// ------ Recording and UI handling ------
 
 function handleToggleRecording () {
   if (!recording) {
     startRecording()
-    toggleButton.html('Stop Recording')
+    select('#toggleBtn').html('Stop Recording')
   } else {
     stopRecording()
-    toggleButton.hide()
+    select('#toggleBtn').hide()
   }
 }
 
 function startRecording () {
-  // Capture visible main canvas stream, so recording matches user view
-  const stream = document.querySelector('canvas').captureStream(30)
+  // Use the p5 canvas element for captureStream (fixed)
+  const stream = canvas.elt.captureStream(30)
   mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' })
   recordedChunks = []
 
@@ -197,12 +164,14 @@ function showPlayback () {
   playbackVideo.autoplay(true)
   playbackVideo.loop(true)
   playbackVideo.volume(0)
-  playbackVideo.style('position', 'absolute')
+  playbackVideo.style('position', 'fixed')
+  playbackVideo.style('top', '0')
+  playbackVideo.style('left', '0')
   playbackVideo.style('z-index', '5')
   playbackVideo.elt.dataset.url = url
 
-  saveButton.show()
-  restartButton.show()
+  select('#saveBtn').show()
+  select('#restartBtn').show()
 }
 
 function saveVideo () {
@@ -220,10 +189,10 @@ function restartSketch () {
     playbackVideo = null
   }
 
-  saveButton.hide()
-  restartButton.hide()
-  toggleButton.html('Start Recording')
-  toggleButton.show()
+  select('#saveBtn').hide()
+  select('#restartBtn').hide()
+  select('#toggleBtn').html('Start Recording')
+  select('#toggleBtn').show()
 
   select('canvas').show()
   loop()
