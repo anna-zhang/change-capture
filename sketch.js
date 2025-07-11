@@ -98,15 +98,19 @@ function draw () {
 
   let scaleX = width / gfx.width
   let scaleY = height / gfx.height
-  let scale = max(scaleX, scaleY)
+  let scaleFactor = max(scaleX, scaleY)
 
-  let drawWidth = gfx.width * scale
-  let drawHeight = gfx.height * scale
+  let drawWidth = gfx.width * scaleFactor
+  let drawHeight = gfx.height * scaleFactor
 
   let offsetX = (width - drawWidth) / 2
   let offsetY = (height - drawHeight) / 2
 
+  push()
+  translate(width, 0)
+  scale(-1, 1)
   image(gfx, offsetX, offsetY, drawWidth, drawHeight)
+  pop()
 }
 
 function windowResized () {
