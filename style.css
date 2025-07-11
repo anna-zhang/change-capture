@@ -123,3 +123,17 @@ canvas {
 body.modal-open *:not(.modal):not(.modal *) {
 	pointer-events: none;
 }
+
+.modal-content .credit {
+	font-size: 14px;
+}
+
+.modal-content .credit a {
+	color: white;
+	text-decoration: underline;
+}
+
+.modal-content .credit a:focus {
+	outline: 2px solid white;
+	outline-offset: 2px;
+}
