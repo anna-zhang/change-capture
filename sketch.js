@@ -1,6 +1,8 @@
-let video, previousFrame
-let stepSize = 6
+const isMobile = /Mobi|Android/i.test(navigator.userAgent)
+let stepSize = isMobile ? 8 : 6 // Slightly larger on mobile to reduce artifacts
+
 let noiseScale = 0.02
+let video, previousFrame
 let gfx
 
 let mediaRecorder
@@ -11,36 +13,74 @@ let ready = false
 
 let playbackVideo
 
-let canvas // <-- store p5 canvas globally for captureStream
+let canvas // p5 canvas for captureStream
 
 function setup () {
-  canvas = createCanvas(windowWidth, windowHeight)
   pixelDensity(1)
-
-  video = createCapture(VIDEO)
-  video.size(320, 240)
-  video.hide()
+  canvas = createCanvas(windowWidth, windowHeight)
+  video = createCapture(VIDEO, () => {
+    video.elt.setAttribute('playsinline', '') // important for iOS mobile
+    video.hide()
+  })
+  video.elt.onloadedmetadata = () => {
+    console.log('Video metadata loaded:', video.width, 'x', video.height)
+    setupSketch()
+    ready = true
+  }
 }
 
 function setupSketch () {
-  gfx = createGraphics(video.width * stepSize, video.height * stepSize)
-  gfx.pixelDensity(1)
-  gfx.blendMode(ADD)
-  gfx.background(0)
+  if (!video.width || !video.height) {
+    console.log('Video metadata not loaded yet, skipping setupSketch.')
+    return
+  }
 
-  previousFrame = createImage(video.width, video.height)
+  console.log(
+    `Setting up gfx with video size ${video.width}x${video.height} and stepSize ${stepSize}`
+  )
+
+  if (isMobile) {
+    const maxGfxSize = 2048
+
+    // Calculate gfx size based on stepSize, clamp to maxGfxSize
+    let gfxWidth = video.width * stepSize
+    let gfxHeight = video.height * stepSize
+
+    // Scale down if too big
+    let scaleDown = 1
+    if (gfxWidth > maxGfxSize) scaleDown = maxGfxSize / gfxWidth
+    if (gfxHeight * scaleDown > maxGfxSize) scaleDown = maxGfxSize / gfxHeight
+
+    gfxWidth = floor(gfxWidth * scaleDown)
+    gfxHeight = floor(gfxHeight * scaleDown)
+
+    gfx = createGraphics(gfxWidth, gfxHeight)
+    gfx.pixelDensity(1)
+    gfx.noSmooth()
+    gfx.blendMode(ADD)
+    gfx.background(0)
+
+    previousFrame = createImage(video.width, video.height)
+    previousFrame.pixelDensity = 1
+
+    // Store scaleDown for use in draw()
+    gfx._scaleDown = scaleDown
+  } else {
+    // Desktop: original behavior - no scaling or clamping
+    gfx = createGraphics(video.width * stepSize, video.height * stepSize)
+    gfx.pixelDensity(1)
+    gfx.blendMode(ADD)
+    gfx.background(0)
+
+    previousFrame = createImage(video.width, video.height)
+    previousFrame.pixelDensity = 1
+
+    gfx._scaleDown = 1 // no scaling on desktop
+  }
 }
 
 function draw () {
-  if (!ready) {
-    if (video.loadedmetadata && video.width > 0 && video.height > 0) {
-      setupSketch()
-      ready = true
-    } else {
-      return
-    }
-  }
-
+  if (!ready) return
   if (recordingStopped) return
 
   gfx.push()
@@ -52,6 +92,16 @@ function draw () {
 
   video.loadPixels()
   previousFrame.loadPixels()
+
+  if (
+    video.pixels.length === 0 ||
+    previousFrame.pixels.length !== video.pixels.length
+  ) {
+    return
+  }
+
+  let scaleDown = gfx._scaleDown || 1
+  let scaledStepSize = stepSize * scaleDown
 
   gfx.stroke(255, 80)
   for (let y = 0; y < video.height; y++) {
@@ -68,11 +118,12 @@ function draw () {
       let diff = abs(r1 - r2) + abs(g1 - g2) + abs(b1 - b2)
 
       if (diff > 60) {
-        let px = x * stepSize
-        let py = y * stepSize
+        let px = x * scaledStepSize
+        let py = y * scaledStepSize
 
         let angle =
           noise(x * noiseScale, y * noiseScale, frameCount * 0.01) * TWO_PI * 2
+
         let dx = cos(angle) * 5
         let dy = sin(angle) * 5
 
@@ -115,6 +166,7 @@ function draw () {
 
 function windowResized () {
   resizeCanvas(windowWidth, windowHeight)
+  if (ready) setupSketch()
 }
 
 // ------ Recording and UI handling ------
@@ -130,7 +182,6 @@ function handleToggleRecording () {
 }
 
 function startRecording () {
-  // Use the p5 canvas element for captureStream (fixed)
   const stream = canvas.elt.captureStream(30)
   mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' })
   recordedChunks = []
