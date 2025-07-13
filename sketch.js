@@ -1,5 +1,5 @@
 const isMobile = /Mobi|Android/i.test(navigator.userAgent)
-let stepSize = isMobile ? 8 : 6 // Slightly larger on mobile to reduce artifacts
+let stepSize = isMobile ? 3000 : 6
 
 let noiseScale = 0.02
 let video, previousFrame
@@ -12,41 +12,48 @@ let recordingStopped = false
 let ready = false
 
 let playbackVideo
+let canvas
 
-let canvas // p5 canvas for captureStream
+function isRecordingSupported () {
+  return (
+    typeof MediaRecorder !== 'undefined' &&
+    MediaRecorder.isTypeSupported('video/webm')
+  )
+}
 
 function setup () {
   pixelDensity(1)
   canvas = createCanvas(windowWidth, windowHeight)
+
   video = createCapture(VIDEO, () => {
-    video.elt.setAttribute('playsinline', '') // important for iOS mobile
+    video.elt.setAttribute('playsinline', '')
     video.hide()
   })
+
   video.elt.onloadedmetadata = () => {
-    console.log('Video metadata loaded:', video.width, 'x', video.height)
     setupSketch()
     ready = true
   }
+
+  // Set initial button label based on support
+  if (isRecordingSupported()) {
+    select('#toggleBtn').html('Start Recording')
+  } else {
+    select('#toggleBtn').html('Capture Image')
+  }
+
+  select('#saveBtn').hide()
+  select('#restartBtn').hide()
 }
 
 function setupSketch () {
-  if (!video.width || !video.height) {
-    console.log('Video metadata not loaded yet, skipping setupSketch.')
-    return
-  }
-
-  console.log(
-    `Setting up gfx with video size ${video.width}x${video.height} and stepSize ${stepSize}`
-  )
+  if (!video.width || !video.height) return
 
   if (isMobile) {
     const maxGfxSize = 2048
-
-    // Calculate gfx size based on stepSize, clamp to maxGfxSize
     let gfxWidth = video.width * stepSize
     let gfxHeight = video.height * stepSize
 
-    // Scale down if too big
     let scaleDown = 1
     if (gfxWidth > maxGfxSize) scaleDown = maxGfxSize / gfxWidth
     if (gfxHeight * scaleDown > maxGfxSize) scaleDown = maxGfxSize / gfxHeight
@@ -62,26 +69,22 @@ function setupSketch () {
 
     previousFrame = createImage(video.width, video.height)
     previousFrame.pixelDensity = 1
-
-    // Store scaleDown for use in draw()
     gfx._scaleDown = scaleDown
   } else {
-    // Desktop: original behavior - no scaling or clamping
     gfx = createGraphics(video.width * stepSize, video.height * stepSize)
     gfx.pixelDensity(1)
+    gfx.noSmooth()
     gfx.blendMode(ADD)
     gfx.background(0)
 
     previousFrame = createImage(video.width, video.height)
     previousFrame.pixelDensity = 1
-
-    gfx._scaleDown = 1 // no scaling on desktop
+    gfx._scaleDown = 1
   }
 }
 
 function draw () {
-  if (!ready) return
-  if (recordingStopped) return
+  if (!ready || recordingStopped) return
 
   gfx.push()
   gfx.blendMode(BLEND)
@@ -96,9 +99,8 @@ function draw () {
   if (
     video.pixels.length === 0 ||
     previousFrame.pixels.length !== video.pixels.length
-  ) {
+  )
     return
-  }
 
   let scaleDown = gfx._scaleDown || 1
   let scaledStepSize = stepSize * scaleDown
@@ -123,7 +125,6 @@ function draw () {
 
         let angle =
           noise(x * noiseScale, y * noiseScale, frameCount * 0.01) * TWO_PI * 2
-
         let dx = cos(angle) * 5
         let dy = sin(angle) * 5
 
@@ -147,15 +148,29 @@ function draw () {
 
   clear()
 
-  let scaleX = width / gfx.width
-  let scaleY = height / gfx.height
-  let scaleFactor = max(scaleX, scaleY)
+  let videoAspect = video.width / video.height
+  let canvasAspect = width / height
 
-  let drawWidth = gfx.width * scaleFactor
-  let drawHeight = gfx.height * scaleFactor
+  let scaleFactor, drawWidth, drawHeight, offsetX, offsetY
 
-  let offsetX = (width - drawWidth) / 2
-  let offsetY = (height - drawHeight) / 2
+  if (videoAspect > canvasAspect) {
+    scaleFactor = height / gfx.height
+    drawWidth = gfx.width * scaleFactor
+    drawHeight = height
+    offsetX = (width - drawWidth) / 2
+    offsetY = 0
+  } else {
+    scaleFactor = width / gfx.width
+    drawWidth = width
+    drawHeight = gfx.height * scaleFactor
+    offsetX = 0
+    offsetY = (height - drawHeight) / 2
+  }
+
+  offsetX = floor(offsetX)
+  offsetY = floor(offsetY)
+  drawWidth = floor(drawWidth)
+  drawHeight = floor(drawHeight)
 
   push()
   translate(width, 0)
@@ -173,8 +188,13 @@ function windowResized () {
 
 function handleToggleRecording () {
   if (!recording) {
-    startRecording()
-    select('#toggleBtn').html('Stop Recording')
+    if (isRecordingSupported()) {
+      startRecording()
+      select('#toggleBtn').html('Stop Recording')
+    } else {
+      captureStillImage()
+      // Hide toggle button, show save and restart handled in captureStillImage
+    }
   } else {
     stopRecording()
     select('#toggleBtn').hide()
@@ -191,7 +211,6 @@ function startRecording () {
   }
 
   mediaRecorder.onstop = showPlayback
-
   mediaRecorder.start()
   recording = true
   console.log('Recording started')
@@ -204,6 +223,25 @@ function stopRecording () {
     recordingStopped = true
     console.log('Recording stopped')
   }
+}
+
+function captureStillImage () {
+  const dataUrl = canvas.elt.toDataURL('image/png')
+
+  select('canvas').hide()
+
+  playbackVideo = createImg(dataUrl, 'Captured Image')
+  playbackVideo.position(0, 0)
+  playbackVideo.size(windowWidth, windowHeight)
+  playbackVideo.style('position', 'fixed')
+  playbackVideo.style('top', '0')
+  playbackVideo.style('left', '0')
+  playbackVideo.style('z-index', '5')
+  playbackVideo.elt.dataset.url = dataUrl
+
+  select('#toggleBtn').hide()
+  select('#saveBtn').html('Download Image').show()
+  select('#restartBtn').show()
 }
 
 function showPlayback () {
@@ -225,17 +263,23 @@ function showPlayback () {
   playbackVideo.style('z-index', '5')
   playbackVideo.elt.dataset.url = url
 
-  select('#saveBtn').show()
+  select('#saveBtn').html('Download Recording').show()
   select('#restartBtn').show()
 }
 
 function saveVideo () {
   const url = playbackVideo.elt.dataset.url
-  const a = createA(url, 'download.webm')
-  a.attribute('download', 'motion-recording.webm')
+  const isImage = url.startsWith('data:image')
+
+  const a = createA(url, isImage ? 'motion-image.png' : 'motion-recording.webm')
+  a.attribute(
+    'download',
+    isImage ? 'motion-image.png' : 'motion-recording.webm'
+  )
   a.hide()
   a.elt.click()
-  URL.revokeObjectURL(url)
+
+  if (!isImage) URL.revokeObjectURL(url)
 }
 
 function restartSketch () {
@@ -246,12 +290,18 @@ function restartSketch () {
 
   select('#saveBtn').hide()
   select('#restartBtn').hide()
-  select('#toggleBtn').html('Start Recording')
   select('#toggleBtn').show()
 
-  select('canvas').show()
-  loop()
+  // Reset toggle button label according to support
+  if (isRecordingSupported()) {
+    select('#toggleBtn').html('Start Recording')
+  } else {
+    select('#toggleBtn').html('Capture Image')
+  }
 
+  select('canvas').show()
+
+  loop()
   recordingStopped = false
   recordedChunks = []
   setupSketch()
