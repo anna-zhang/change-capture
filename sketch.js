@@ -1,6 +1,6 @@
 // --- Mobile detection via feature/viewport (3D) ---
 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-let stepSize = isMobile ? 4 : 6 // 2A: was 3000 on mobile (bug)
+let stepSize = 6
 
 let noiseScale = 0.02
 let video, previousFrame
@@ -123,7 +123,7 @@ function setupSketch () {
   if (!video.width || !video.height) return
 
   if (isMobile) {
-    const maxGfxSize = 2048
+    const maxGfxSize = 1024
     let gfxWidth = video.width * stepSize
     let gfxHeight = video.height * stepSize
 
@@ -178,10 +178,10 @@ function draw () {
   let scaleDown = gfx._scaleDown || 1
   let scaledStepSize = stepSize * scaleDown
 
+  let sampleStep = isMobile ? 4 : 2
   gfx.stroke(255, 80)
-  // 3A: sample every 2nd pixel for performance
-  for (let y = 0; y < video.height; y += 2) {
-    for (let x = 0; x < video.width; x += 2) {
+  for (let y = 0; y < video.height; y += sampleStep) {
+    for (let x = 0; x < video.width; x += sampleStep) {
       let index = (x + y * video.width) * 4
 
       let r1 = video.pixels[index]
@@ -199,10 +199,10 @@ function draw () {
 
         let angle =
           noise(x * noiseScale, y * noiseScale, frameCount * 0.01) * TWO_PI * 2
-        let dx = cos(angle) * 5
-        let dy = sin(angle) * 5
+        let dx = cos(angle) * 5 * scaleDown
+        let dy = sin(angle) * 5 * scaleDown
 
-        gfx.strokeWeight(map(diff, 60, 255, 0.5, 2))
+        gfx.strokeWeight(map(diff, 60, 255, 0.5, 2) * scaleDown)
         gfx.line(px, py, px + dx, py + dy)
       }
     }

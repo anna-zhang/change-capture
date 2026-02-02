@@ -22,12 +22,15 @@ diff = |R_current - R_previous| + |G_current - G_previous| + |B_current - B_prev
 
 If the total difference exceeds a threshold of 60 (out of a maximum of 765), the pixel is considered "changed" and a mark is drawn at that location.
 
+To improve performance, pixels are sampled at intervals rather than every pixel -- every 2nd pixel on desktop, every 4th on mobile.
+
 ### Drawing Motion Trails
 
-Where motion is detected, the sketch draws short lines (about 5 pixels long) whose direction is determined by a Perlin noise field. The noise field varies spatially and shifts over time, giving the trails a flowing, organic quality rather than random static.
+Where motion is detected, the sketch draws short lines whose direction is determined by a Perlin noise field. The noise field varies spatially and shifts over time, giving the trails a flowing, organic quality rather than random static.
 
 - **Line thickness** scales with motion intensity -- subtle changes produce thin strokes; large changes produce thicker ones.
 - **Line color** is white at partial opacity (alpha 80/255), drawn with additive blending so overlapping strokes accumulate into brighter marks.
+- **On mobile**, stroke length and weight are scaled proportionally to the graphics buffer size to match the desktop visual density.
 
 ### Decay
 
@@ -40,16 +43,21 @@ The motion buffer is drawn to the main canvas with a horizontal flip (`scale(-1,
 ## Features
 
 - **Live motion visualization** -- real-time frame differencing rendered as flowing trails
-- **Video recording** -- record the canvas as a `.webm` video on supported browsers (Chrome, Edge, Firefox)
-- **Image capture** -- fall back to a `.png` snapshot on browsers without MediaRecorder/WebM support (e.g., Safari on iOS)
+- **Video recording** -- record the canvas with codec negotiation (VP9, VP8, WebM, MP4) for cross-browser support
+- **Image capture** -- fall back to a `.png` snapshot on browsers without MediaRecorder support
+- **Recording indicator** -- pulsing red dot with elapsed timer during recording
 - **Download** -- save recordings or captures locally
 - **Mirror display** -- horizontally flipped output for natural interaction
 - **Responsive** -- fills the browser window and adapts on resize
-- **Accessible** -- keyboard-navigable UI, focus trapping in the About modal, ARIA attributes
+- **First-time onboarding** -- brief overlay explaining the concept, shown once
+- **Camera error handling** -- clear message when camera access is denied
+- **Accessible** -- keyboard-navigable UI, focus trapping in the About modal, ARIA live region for screen reader announcements, WCAG-compliant touch targets on mobile
 
 ## Usage
 
 Open `index.html` in a browser and grant camera access when prompted. The motion visualization starts immediately.
+
+First-time visitors see a brief onboarding overlay explaining the concept. It dismisses on click/tap or automatically when the camera feed starts.
 
 **Controls (bottom of screen):**
 
@@ -63,10 +71,10 @@ Open `index.html` in a browser and grant camera access when prompted. The motion
 ## Project Structure
 
 ```
-index.html   -- HTML structure, modal, inline UI/accessibility script
+index.html   -- HTML structure, modal, overlays, ARIA regions
 sketch.js    -- p5.js sketch: frame differencing, motion trails, recording logic
-ui.js        -- Modal behavior and button event wiring (mirrors inline script)
-style.css    -- Layout, typography, button and modal styles
+ui.js        -- Modal behavior, focus trap, onboarding, ARIA announcements, button wiring
+style.css    -- Layout, typography, button/modal/overlay styles, mobile touch targets
 ```
 
 ### Dependencies
@@ -82,20 +90,22 @@ These values are hardcoded in `sketch.js` and can be adjusted by editing the fil
 
 | Parameter | Default | Effect |
 |---|---|---|
-| `stepSize` | 6 (desktop) / 3000 (mobile) | Scale multiplier for the motion buffer |
+| `stepSize` | 6 | Scale multiplier for the motion buffer |
 | `noiseScale` | 0.02 | Perlin noise smoothness (lower = smoother flow) |
 | Motion threshold | 60 | Minimum pixel difference to register as motion (0--765) |
 | Decay alpha | 15 | Trail fade speed per frame (higher = slower fade) |
 | Stroke weight | 0.5--2 px | Line thickness, mapped from motion intensity |
-| Line length | ~5 px | Length of each motion trail stroke |
+| Line length | ~5 px | Length of each motion trail stroke (scaled by buffer ratio on mobile) |
+| Pixel sample step | 2 (desktop) / 4 (mobile) | Pixels skipped during frame differencing |
 | Recording fps | 30 | MediaRecorder capture frame rate |
-| Max buffer size | 2048 px | Mobile graphics buffer dimension cap |
+| Recording bitrate | 5 Mbps | MediaRecorder video bitrate |
+| Max buffer size | 1024 px (mobile) | Mobile graphics buffer dimension cap |
 
 ## Limitations
 
-- **Mobile performance** -- On mobile devices, the graphics buffer is heavily downscaled (capped at 2048x2048) to avoid GPU memory issues, resulting in lower visual fidelity.
-- **No video recording on iOS/Safari** -- Safari lacks MediaRecorder support for WebM. The app falls back to still image capture.
+- **Mobile performance** -- On mobile devices, the graphics buffer is capped at 1024px and pixels are sampled less densely to maintain real-time frame rates.
+- **Safari video recording** -- Safari may support MP4 recording via codec negotiation, but falls back to still image capture if no codec is available.
 - **No audio** -- Recordings are video-only.
-- **Camera permission required** -- The app cannot function without access to the device camera.
+- **Camera permission required** -- The app cannot function without access to the device camera. A clear error message is shown if access is denied.
 - **Lighting sensitivity** -- The frame differencing algorithm responds to all pixel changes, including shifts in ambient lighting, shadows, and camera noise -- not just physical movement.
 - **No configurable UI** -- All visual parameters (threshold, decay rate, noise scale, etc.) are hardcoded and require editing the source to change.
