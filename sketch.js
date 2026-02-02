@@ -1,5 +1,6 @@
-const isMobile = /Mobi|Android/i.test(navigator.userAgent)
-let stepSize = isMobile ? 3000 : 6
+// --- Mobile detection via feature/viewport (3D) ---
+const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+let stepSize = isMobile ? 4 : 6 // 2A: was 3000 on mobile (bug)
 
 let noiseScale = 0.02
 let video, previousFrame
@@ -10,30 +11,102 @@ let recordedChunks = []
 let recording = false
 let recordingStopped = false
 let ready = false
+let toggleLocked = false // 1C: debounce guard
 
 let playbackVideo
+let playbackBlobUrl = null // 2E: track blob URL for revocation
 let canvas
 
+// 2G: Codec negotiation
+let negotiatedMimeType = 'video/webm'
+
+function negotiateCodec () {
+  const candidates = [
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+    'video/mp4'
+  ]
+  for (const mime of candidates) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(mime)) {
+      negotiatedMimeType = mime
+      return mime
+    }
+  }
+  return null
+}
+
 function isRecordingSupported () {
-  return (
-    typeof MediaRecorder !== 'undefined' &&
-    MediaRecorder.isTypeSupported('video/webm')
-  )
+  return negotiateCodec() !== null
+}
+
+// 2C: Recording timer
+let recTimerInterval = null
+let recStartTime = 0
+
+function startRecTimer () {
+  recStartTime = Date.now()
+  const indicator = document.getElementById('recordingIndicator')
+  const timerEl = document.getElementById('recTimer')
+  if (indicator) indicator.style.display = 'flex'
+  updateRecTimer()
+  recTimerInterval = setInterval(updateRecTimer, 1000)
+
+  function updateRecTimer () {
+    const elapsed = Math.floor((Date.now() - recStartTime) / 1000)
+    const mins = Math.floor(elapsed / 60)
+    const secs = String(elapsed % 60).padStart(2, '0')
+    if (timerEl) timerEl.textContent = mins + ':' + secs
+  }
+}
+
+function stopRecTimer () {
+  if (recTimerInterval) {
+    clearInterval(recTimerInterval)
+    recTimerInterval = null
+  }
+  const indicator = document.getElementById('recordingIndicator')
+  if (indicator) indicator.style.display = 'none'
+}
+
+function showCameraError () {
+  const errorOverlay = document.getElementById('cameraError')
+  if (errorOverlay) errorOverlay.style.display = 'flex'
+  const controls = document.querySelector('.ui-bottom')
+  if (controls) controls.style.display = 'none'
+  if (typeof announce === 'function') announce('Camera access denied. Please allow camera access and reload.')
 }
 
 function setup () {
   pixelDensity(1)
   canvas = createCanvas(windowWidth, windowHeight)
 
-  video = createCapture(VIDEO, () => {
-    video.elt.setAttribute('playsinline', '')
-    video.hide()
-  })
+  // 1E: Pre-check camera permission so we can handle denial
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => {
+      // Stop the pre-check stream tracks (createCapture will open its own)
+      stream.getTracks().forEach(t => t.stop())
 
-  video.elt.onloadedmetadata = () => {
-    setupSketch()
-    ready = true
-  }
+      video = createCapture(VIDEO, () => {
+        video.elt.setAttribute('playsinline', '')
+        video.hide()
+        // Dismiss onboarding when camera starts
+        const onboarding = document.getElementById('onboarding')
+        if (onboarding && onboarding.style.display !== 'none') {
+          onboarding.style.display = 'none'
+          localStorage.setItem('motionMirrorOnboarded', '1')
+        }
+        if (typeof announce === 'function') announce('Camera ready. Motion visualization active.')
+      })
+
+      video.elt.onloadedmetadata = () => {
+        setupSketch()
+        ready = true
+      }
+    })
+    .catch(() => {
+      showCameraError()
+    })
 
   // Set initial button label based on support
   if (isRecordingSupported()) {
@@ -68,7 +141,7 @@ function setupSketch () {
     gfx.background(0)
 
     previousFrame = createImage(video.width, video.height)
-    previousFrame.pixelDensity = 1
+    // 1B: removed previousFrame.pixelDensity = 1 (no-op)
     gfx._scaleDown = scaleDown
   } else {
     gfx = createGraphics(video.width * stepSize, video.height * stepSize)
@@ -78,7 +151,7 @@ function setupSketch () {
     gfx.background(0)
 
     previousFrame = createImage(video.width, video.height)
-    previousFrame.pixelDensity = 1
+    // 1B: removed previousFrame.pixelDensity = 1 (no-op)
     gfx._scaleDown = 1
   }
 }
@@ -106,8 +179,9 @@ function draw () {
   let scaledStepSize = stepSize * scaleDown
 
   gfx.stroke(255, 80)
-  for (let y = 0; y < video.height; y++) {
-    for (let x = 0; x < video.width; x++) {
+  // 3A: sample every 2nd pixel for performance
+  for (let y = 0; y < video.height; y += 2) {
+    for (let x = 0; x < video.width; x += 2) {
       let index = (x + y * video.width) * 4
 
       let r1 = video.pixels[index]
@@ -179,21 +253,26 @@ function draw () {
   pop()
 }
 
+// 1D: Guard resize during recording
 function windowResized () {
   resizeCanvas(windowWidth, windowHeight)
-  if (ready) setupSketch()
+  if (ready && !recording && !recordingStopped) setupSketch()
 }
 
 // ------ Recording and UI handling ------
 
 function handleToggleRecording () {
+  // 1C: Prevent double-recording via debounce guard
+  if (toggleLocked) return
+  toggleLocked = true
+  setTimeout(() => { toggleLocked = false }, 500)
+
   if (!recording) {
     if (isRecordingSupported()) {
       startRecording()
       select('#toggleBtn').html('Stop Recording')
     } else {
       captureStillImage()
-      // Hide toggle button, show save and restart handled in captureStillImage
     }
   } else {
     stopRecording()
@@ -202,8 +281,12 @@ function handleToggleRecording () {
 }
 
 function startRecording () {
+  recording = true // set immediately before async work
   const stream = canvas.elt.captureStream(30)
-  mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' })
+  mediaRecorder = new MediaRecorder(stream, {
+    mimeType: negotiatedMimeType,
+    videoBitsPerSecond: 5000000
+  })
   recordedChunks = []
 
   mediaRecorder.ondataavailable = e => {
@@ -212,8 +295,8 @@ function startRecording () {
 
   mediaRecorder.onstop = showPlayback
   mediaRecorder.start()
-  recording = true
-  console.log('Recording started')
+  startRecTimer()
+  if (typeof announce === 'function') announce('Recording started.')
 }
 
 function stopRecording () {
@@ -221,7 +304,8 @@ function stopRecording () {
     mediaRecorder.stop()
     recording = false
     recordingStopped = true
-    console.log('Recording stopped')
+    stopRecTimer()
+    if (typeof announce === 'function') announce('Recording stopped.')
   }
 }
 
@@ -242,11 +326,16 @@ function captureStillImage () {
   select('#toggleBtn').hide()
   select('#saveBtn').html('Download Image').show()
   select('#restartBtn').show()
+  if (typeof announce === 'function') announce('Image captured. You can download or restart.')
 }
 
 function showPlayback () {
-  const blob = new Blob(recordedChunks, { type: 'video/webm' })
+  const blob = new Blob(recordedChunks, { type: negotiatedMimeType })
+  // 2E: Clear recordedChunks after blob is created
+  recordedChunks = []
+
   const url = URL.createObjectURL(blob)
+  playbackBlobUrl = url
 
   noLoop()
   select('canvas').hide()
@@ -265,24 +354,33 @@ function showPlayback () {
 
   select('#saveBtn').html('Download Recording').show()
   select('#restartBtn').show()
+  if (typeof announce === 'function') announce('Recording ready for playback. You can download or restart.')
 }
 
 function saveVideo () {
   const url = playbackVideo.elt.dataset.url
   const isImage = url.startsWith('data:image')
+  const isMP4 = negotiatedMimeType.includes('mp4')
+  const ext = isImage ? 'png' : (isMP4 ? 'mp4' : 'webm')
+  const filename = isImage ? 'motion-image.png' : ('motion-recording.' + ext)
 
-  const a = createA(url, isImage ? 'motion-image.png' : 'motion-recording.webm')
-  a.attribute(
-    'download',
-    isImage ? 'motion-image.png' : 'motion-recording.webm'
-  )
+  const a = createA(url, filename)
+  a.attribute('download', filename)
   a.hide()
   a.elt.click()
 
   if (!isImage) URL.revokeObjectURL(url)
+  playbackBlobUrl = null
+  if (typeof announce === 'function') announce('Download started.')
 }
 
 function restartSketch () {
+  // 2E: Revoke blob URL before removing playback
+  if (playbackBlobUrl) {
+    URL.revokeObjectURL(playbackBlobUrl)
+    playbackBlobUrl = null
+  }
+
   if (playbackVideo) {
     playbackVideo.remove()
     playbackVideo = null
@@ -305,4 +403,5 @@ function restartSketch () {
   recordingStopped = false
   recordedChunks = []
   setupSketch()
+  if (typeof announce === 'function') announce('Restarted. Motion visualization active.')
 }

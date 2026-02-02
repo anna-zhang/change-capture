@@ -19,6 +19,27 @@
       <div class="ui-top-right">
          <a href="#" id="aboutLink" aria-haspopup="dialog" aria-controls="aboutModal">About</a>
       </div>
+      <!-- Camera error overlay -->
+      <div id="cameraError" class="camera-error" style="display: none">
+         <div class="camera-error-content">
+            <h2>Camera Access Required</h2>
+            <p>Motion Mirror needs camera access to visualize your movement. Please allow camera access in your browser settings and reload the page.</p>
+         </div>
+      </div>
+      <!-- Recording indicator -->
+      <div id="recordingIndicator" class="recording-indicator" style="display: none" aria-live="polite">
+         <span class="rec-dot"></span>
+         <span id="recTimer">0:00</span>
+      </div>
+      <!-- Onboarding overlay -->
+      <div id="onboarding" class="onboarding" style="display: none">
+         <div class="onboarding-content">
+            <p class="onboarding-tagline">Move to create. Stand still to disappear.</p>
+            <p class="onboarding-hint">This mirror draws only where it sees motion.</p>
+         </div>
+      </div>
+      <!-- ARIA live region for screen reader announcements -->
+      <div id="ariaAnnounce" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
       <!-- Bottom center: Buttons -->
       <div class="ui-bottom" role="group" aria-label="Controls">
          <button id="toggleBtn">Start Recording</button>
@@ -37,78 +58,6 @@
       <!-- Sketch logic -->
       <script src="sketch.js"></script>
       <!-- UI behavior and accessibility -->
-      <script>
-         window.addEventListener('DOMContentLoaded', () => {
-           const modal = document.getElementById('aboutModal');
-           const closeModalBtn = document.getElementById('closeModalBtn');
-           const aboutLink = document.getElementById('aboutLink');
-         
-           // Button event bindings
-           document.getElementById('toggleBtn')?.addEventListener('click', handleToggleRecording);
-           document.getElementById('saveBtn')?.addEventListener('click', saveVideo);
-           document.getElementById('restartBtn')?.addEventListener('click', restartSketch);
-         
-           // Open modal
-           aboutLink.addEventListener('click', (e) => {
-             e.preventDefault();
-             modal.style.display = 'block';
-             modal.setAttribute('aria-hidden', 'false');
-             document.body.style.overflow = 'hidden';
-             trapFocus(modal);
-           });
-         
-           // Close modal
-           closeModalBtn.addEventListener('click', () => {
-             modal.style.display = 'none';
-             modal.setAttribute('aria-hidden', 'true');
-             releaseFocusTrap();
-             document.body.style.overflow = '';
-             aboutLink.focus();
-           });
-         
-           document.addEventListener('keydown', (e) => {
-             if (e.key === 'Escape' && modal.style.display === 'block') {
-               modal.style.display = 'none';
-               modal.setAttribute('aria-hidden', 'true');
-               releaseFocusTrap();
-               document.body.style.overflow = '';
-               aboutLink.focus();
-             }
-           });
-         
-           // Focus trap
-           let focusableElements, firstFocusable, lastFocusable;
-         
-           function trapFocus(container) {
-             focusableElements = container.querySelectorAll(
-               'a, button, textarea, input, select, [tabindex]:not([tabindex="-1"])'
-             );
-             if (focusableElements.length === 0) return;
-             firstFocusable = focusableElements[0];
-             lastFocusable = focusableElements[focusableElements.length - 1];
-             firstFocusable.focus();
-             document.addEventListener('keydown', handleFocusTrap);
-           }
-         
-           function releaseFocusTrap() {
-             document.removeEventListener('keydown', handleFocusTrap);
-           }
-         
-           function handleFocusTrap(e) {
-             if (e.key !== 'Tab') return;
-             if (e.shiftKey) {
-               if (document.activeElement === firstFocusable) {
-                 e.preventDefault();
-                 lastFocusable.focus();
-               }
-             } else {
-               if (document.activeElement === lastFocusable) {
-                 e.preventDefault();
-                 firstFocusable.focus();
-               }
-             }
-           }
-         });
-      </script>
+      <script src="ui.js"></script>
    </body>
 </html>
