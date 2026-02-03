@@ -39,9 +39,9 @@ canvas {
 }
 
 .ui-top-right a {
-	text-decoration: none;
+	text-decoration: underline;
+	text-underline-offset: 3px;
 	color: white;
-	border-bottom: 1px solid white;
 }
 
 .ui-top-right a:focus {
@@ -97,10 +97,8 @@ canvas {
 
 	.ui-top-right a {
 		display: inline-block;
-		padding: 10px;
-		min-height: 44px;
+		padding: 10px 10px 0;
 		min-width: 44px;
-		line-height: 24px;
 	}
 }
 
